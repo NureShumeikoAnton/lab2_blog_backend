@@ -48,6 +48,7 @@ const getPostById = async (req, res) => {
         const postId = req.params.id;
         const cachedPost = getFromCache(`post:${postId}`);
         if (cachedPost) {
+            console.log('Returning post from cache');
             return res.status(201).json(cachedPost);
         }
         const post = await Post.findOne({
@@ -99,8 +100,7 @@ const createPost = async (req, res) => {
             user_id: user.user_id,
             category_id: category.category_id
         });
-        postsCache.del('allPosts')
-        setCache(`post:${post.post_id}`, post);
+        postsCache.del('allPosts');
         res.status(201).json(post);
     } catch (error) {
         res.status(500).json({ message: 'Error creating post', error });
