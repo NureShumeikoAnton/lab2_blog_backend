@@ -50,7 +50,8 @@ const getCommentsByPostId = async (req, res) => {
         if (!comments || comments.length === 0) {
             return res.status(404).json({ message: 'Comments not found' });
         }
-        setCache(`commentsPostId:${post_id}`, comments);
+        const plainComments = comments.map(c => c.toJSON());
+        setCache(`commentsPostId:${post_id}`, plainComments);
         res.status(200).json(comments);
     } catch (error) {
         res.status(500).json({ message: 'Error fetching comments', error });

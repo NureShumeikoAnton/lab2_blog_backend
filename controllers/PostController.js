@@ -32,7 +32,11 @@ const getAllPosts = async (req, res) => {
             ],
             attributes: { exclude: ['user_id', 'category_id'] },
         });
-        setCache('allPosts', posts);
+        if (!posts || posts.length === 0) {
+            return res.status(404).json({ message: 'Posts not found' });
+        }
+        const plainPosts = posts.map(p => p.toJSON());
+        setCache('allPosts', plainPosts);
         res.status(200).json(posts);
     } catch (error) {
         res.status(500).json({ message: 'Error fetching posts', error });
@@ -65,7 +69,8 @@ const getPostById = async (req, res) => {
         if (!post) {
             return res.status(404).json({ message: 'Post not found' });
         }
-        setCache(`post:${postId}`, post);
+        const plainPost = post.toJSON();
+        setCache(`post:${postId}`, plainPost);
         res.status(200).json(post);
     } catch (error) {
         res.status(500).json({ message: 'Error fetching post', error });
