@@ -1,15 +1,6 @@
 const {Comment, User} = require('../models/Relations');
 const jwt = require('jsonwebtoken');
-const NodeCache = require('node-cache');
-
-const commentsCache = new NodeCache({ stdTTL: 0, checkperiod: 120 });
-
-function getFromCache(key) {
-    return commentsCache.get(key);
-}
-function setCache(key, data) {
-    return commentsCache.set(key, data);
-}
+const { getFromCache, setCache, delCache } = require('../cache/cache');
 
 const getAllComments = async (req, res) => {
     try {
@@ -68,16 +59,44 @@ const createComment = async (req, res) => {
             return res.status(401).json({ message: 'Unauthorized' });
         }
         const comment = await Comment.create({ content, post_id, user_id: user.user_id });
-        commentsCache.del('allComments');
-        commentsCache.del(`commentsPostId:${post_id}`);
+        delCache('allComments');
+        delCache(`commentsPostId:${post_id}`);
+        delCache('allPosts');
         res.status(201).json(comment);
     } catch (error) {
         res.status(500).json({ message: 'Error creating comment', error });
     }
 }
 
+const deleteComment = async (req, res) => {
+    try {
+        const commentId = req.params.id;
+        const token = req.headers['authorization'];
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findByPk(decoded.id);
+        if (!user) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+        const comment = await Comment.findByPk(commentId);
+        if (!comment) {
+            return res.status(404).json({ message: 'Comment not found' });
+        }
+        if (comment.user_id !== user.user_id) {
+            return res.status(403).json({ message: 'Forbidden' });
+        }
+        await comment.destroy();
+        delCache('allComments');
+        delCache(`commentsPostId:${comment.post_id}`);
+        delCache('allPosts');
+        res.status(204).send();
+    } catch (error) {
+        res.status(500).json({ message: 'Error deleting comment', error });
+    }
+}
+
 module.exports = {
     getAllComments,
     getCommentsByPostId,
-    createComment
+    createComment,
+    deleteComment
 }

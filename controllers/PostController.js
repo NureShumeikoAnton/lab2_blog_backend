@@ -1,15 +1,6 @@
-const {User, Post, Category} = require('../models/Relations');
+const {User, Post, Category, Comment} = require('../models/Relations');
 const jwt = require('jsonwebtoken');
-const NodeCache = require('node-cache');
-
-const postsCache = new NodeCache({ stdTTL: 0, checkperiod: 120 });
-
-function getFromCache(key) {
-    return postsCache.get(key);
-}
-function setCache(key, data) {
-    return postsCache.set(key, data);
-}
+const { getFromCache, setCache, delCache } = require('../cache/cache');
 
 const getAllPosts = async (req, res) => {
     try {
@@ -36,12 +27,18 @@ const getAllPosts = async (req, res) => {
             return res.status(404).json({ message: 'Posts not found' });
         }
         const plainPosts = posts.map(p => p.toJSON());
-        setCache('allPosts', plainPosts);
-        res.status(200).json(posts);
+        // Добавляем поле commentsCount для каждого поста
+        const postsWithComments = await Promise.all(plainPosts.map(async post => {
+            const count = await Comment.count({ where: { post_id: post.post_id } });
+            return { ...post, commentsCount: count };
+        }));
+        setCache('allPosts', postsWithComments);
+        res.status(200).json(postsWithComments);
     } catch (error) {
         res.status(500).json({ message: 'Error fetching posts', error });
     }
 }
+//commentsCount
 
 const getPostById = async (req, res) => {
     try {
@@ -98,7 +95,7 @@ const createPost = async (req, res) => {
             user_id: user.user_id,
             category_id: category.category_id
         });
-        postsCache.del('allPosts');
+        delCache('allPosts');
         res.status(201).json(post);
     } catch (error) {
         res.status(500).json({ message: 'Error creating post', error });
@@ -140,8 +137,8 @@ const updatePost = async (req, res) => {
             content: content || post.content,
             category_id: category.category_id
         });
-        postsCache.del('allPosts');
-        postsCache.del(`post:${postId}`);
+        delCache('allPosts');
+        delCache(`post:${postId}`);
         res.status(200).json(post);
     } catch (error) {
         res.status(500).json({ message: 'Error updating post', error });
@@ -168,7 +165,7 @@ const deletePost = async (req, res) => {
             return res.status(403).json({ message: 'Forbidden' });
         }
         await Post.destroy({ where: { post_id: postId } });
-        postsCache.del('allPosts');
+        delCache('allPosts');
         res.status(204).send();
     } catch (error) {
         res.status(500).json({ message: 'Error deleting post', error });
@@ -181,5 +178,4 @@ module.exports = {
     createPost,
     updatePost,
     deletePost
-}
-
+};
