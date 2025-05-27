@@ -27,7 +27,6 @@ const getAllPosts = async (req, res) => {
             return res.status(404).json({ message: 'Posts not found' });
         }
         const plainPosts = posts.map(p => p.toJSON());
-        // Добавляем поле commentsCount для каждого поста
         const postsWithComments = await Promise.all(plainPosts.map(async post => {
             const count = await Comment.count({ where: { post_id: post.post_id } });
             return { ...post, commentsCount: count };
@@ -38,7 +37,6 @@ const getAllPosts = async (req, res) => {
         res.status(500).json({ message: 'Error fetching posts', error });
     }
 }
-//commentsCount
 
 const getPostById = async (req, res) => {
     try {
@@ -67,6 +65,9 @@ const getPostById = async (req, res) => {
         if (!post) {
             return res.status(404).json({ message: 'Post not found' });
         }
+        const plainPost = post.toJSON();
+        plainPost.commentsCount = await Comment.count({where: {post_id: postId}});
+        setCache(`post:${postId}`, plainPost);
         res.status(200).json(post);
     } catch (error) {
         res.status(500).json({ message: 'Error fetching post', error });
