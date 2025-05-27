@@ -1,8 +1,22 @@
 const {User, Post, Category} = require('../models/Relations');
 const jwt = require('jsonwebtoken');
+const NodeCache = require('node-cache');
+
+const postsCache = new NodeCache({ stdTTL: 0, checkperiod: 120 });
+
+function getFromCache(key) {
+    return postsCache.get(key);
+}
+function setCache(key, data) {
+    return postsCache.set(key, data);
+}
 
 const getAllPosts = async (req, res) => {
     try {
+        const cachedPosts = getFromCache('allPosts');
+        if (cachedPosts) {
+            return res.status(201).json(cachedPosts);
+        }
         const posts = await Post.findAll({
             include: [
                 {
@@ -18,6 +32,11 @@ const getAllPosts = async (req, res) => {
             ],
             attributes: {exclude: ['user_id', 'category_id']},
         });
+        if (!posts || posts.length === 0) {
+            return res.status(404).json({ message: 'Posts not found' });
+        }
+        const plainPosts = posts.map(p => p.toJSON());
+        setCache('allPosts', plainPosts);
         res.status(200).json(posts);
     } catch (error) {
         res.status(500).json({ message: 'Error fetching posts', error });
@@ -27,6 +46,11 @@ const getAllPosts = async (req, res) => {
 const getPostById = async (req, res) => {
     try {
         const postId = req.params.id;
+        const cachedPost = getFromCache(`post:${postId}`);
+        if (cachedPost) {
+            console.log('Returning post from cache');
+            return res.status(201).json(cachedPost);
+        }
         const post = await Post.findOne({
             where: { post_id: postId },
             include: [
@@ -59,16 +83,22 @@ const createPost = async (req, res) => {
         if (!token) {
             return res.status(401).json({ message: 'Unauthorized' });
         }
-        let category = await Category.findOne({ where: { name: category_name } });
-        if (!category) {
-            category = await Category.create({ name: category_name });
-        }
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         const user = await User.findByPk(decoded.id);
         if (!user) {
             return res.status(401).json({ message: 'Unauthorized' });
         }
-        const post = await Post.create({ title, content, user_id: user.user_id, category_id: category.category_id });
+        let category = await Category.findOne({ where: { name: category_name } });
+        if (!category) {
+            category = await Category.create({ name: category_name });
+        }
+        const post = await Post.create({
+            title,
+            content,
+            user_id: user.user_id,
+            category_id: category.category_id
+        });
+        postsCache.del('allPosts');
         res.status(201).json(post);
     } catch (error) {
         res.status(500).json({ message: 'Error creating post', error });
@@ -110,7 +140,8 @@ const updatePost = async (req, res) => {
             content: content || post.content,
             category_id: category.category_id
         });
-
+        postsCache.del('allPosts');
+        postsCache.del(`post:${postId}`);
         res.status(200).json(post);
     } catch (error) {
         res.status(500).json({ message: 'Error updating post', error });
@@ -121,29 +152,24 @@ const deletePost = async (req, res) => {
     try {
         const postId = req.params.id;
         const token = req.headers['authorization'];
-        
         if (!token) {
             return res.status(401).json({ message: 'Unauthorized' });
         }
-
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         const user = await User.findByPk(decoded.id);
         if (!user) {
             return res.status(401).json({ message: 'Unauthorized' });
         }
-
-        const post = await Post.findByPk(postId);
+        const post = await Post.findOne({ where: { post_id: postId } });
         if (!post) {
             return res.status(404).json({ message: 'Post not found' });
         }
-
         if (post.user_id !== user.user_id) {
-            return res.status(403).json({ message: 'Forbidden - You can only delete your own posts' });
+            return res.status(403).json({ message: 'Forbidden' });
         }
-
-        await post.destroy();
-
-        res.status(200).json({ message: 'Post deleted successfully' });
+        await Post.destroy({ where: { post_id: postId } });
+        postsCache.del('allPosts');
+        res.status(204).send();
     } catch (error) {
         res.status(500).json({ message: 'Error deleting post', error });
     }
