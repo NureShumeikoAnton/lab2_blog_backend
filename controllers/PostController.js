@@ -107,9 +107,37 @@ const createPost = async (req, res) => {
     }
 };
 
+const deletePost = async (req, res) => {
+    try {
+        const postId = req.params.id;
+        const token = req.headers['authorization'];
+        if (!token) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findByPk(decoded.id);
+        if (!user) {
+            return res.status(401).json({ message: 'Unauthorized' });
+        }
+        const post = await Post.findOne({ where: { post_id: postId } });
+        if (!post) {
+            return res.status(404).json({ message: 'Post not found' });
+        }
+        if (post.user_id !== user.user_id) {
+            return res.status(403).json({ message: 'Forbidden' });
+        }
+        await Post.destroy({ where: { post_id: postId } });
+        postsCache.del('allPosts');
+        res.status(204).send();
+    } catch (error) {
+        res.status(500).json({ message: 'Error deleting post', error });
+    }
+}
+
 module.exports = {
     getAllPosts,
     getPostById,
-    createPost
+    createPost,
+    deletePost
 }
 
